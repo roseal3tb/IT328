@@ -1,8 +1,9 @@
+package com.mycompany.networkphase2;
+
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
 import java.io.File;
-import java.net.URL;
 
 public class ClientGUI extends JFrame {
     // الألوان - تدرجات وردي ناعم
@@ -47,7 +48,7 @@ public class ClientGUI extends JFrame {
 
     public ClientGUI() {
         setTitle("Glam & Ping - Beauty Studio");
-        setSize(1200, 800);
+        setSize(1000, 700);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setBackground(COLOR_BG);
         setUndecorated(true);
@@ -235,7 +236,6 @@ public class ClientGUI extends JFrame {
             System.exit(0);
         });
 
-        // توحيد الارتفاع فقط
         setUniformHeight(btnJoinPlayRoom, btnLeaveConn);
 
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
@@ -308,7 +308,6 @@ public class ClientGUI extends JFrame {
             }
         });
 
-        // توحيد الارتفاع فقط
         setUniformHeight(btnReady, btnLeavePlay);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
@@ -380,7 +379,7 @@ public class ClientGUI extends JFrame {
         scroll.setPreferredSize(new Dimension(300, 0));
         scroll.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(COLOR_ACCENT, 2),
-            "Leaderboard",
+            "Score",
             TitledBorder.CENTER,
             TitledBorder.TOP,
             loraBoldFont.deriveFont(Font.BOLD, 18f),
@@ -411,7 +410,6 @@ public class ClientGUI extends JFrame {
         btnGameLeave.setFont(loraBoldFont.deriveFont(Font.BOLD, 18f));
         btnGameLeave.addActionListener(e -> leaveGame());
 
-        // توحيد الارتفاع فقط
         setUniformHeight(btnSend, btnGameLeave);
 
         btnSend.addActionListener(e -> sendAnswer());
@@ -607,7 +605,11 @@ public class ClientGUI extends JFrame {
         }
         else if (m.startsWith("SCORES:")) {
             String scores = m.substring(7);
-            areaScores.setText(scores.replace(",", "\n").replace("-", " : "));
+            if (scores.trim().isEmpty() || scores.equals(",")) {
+                areaScores.setText("No scores yet");
+            } else {
+                areaScores.setText(scores.replace(",", "\n").replace("-", " : "));
+            }
         }
         else if (m.startsWith("NEXT_LEVEL:")) {
             currentLevel = Integer.parseInt(m.substring(11));
@@ -622,17 +624,8 @@ public class ClientGUI extends JFrame {
             t.setRepeats(false);
             t.start();
         }
-        else if (m.equals("FINAL")) {
-            JOptionPane.showMessageDialog(this, "Game Over! Check leaderboard for winner.");
-            resetGame();
-            cardLayout.show(mainPanel, "CONNECTION");
-            out.println("RETURN_TO_CONNECTION");
-        }
         else if (m.equals("TIME_UP_NO_WINNER")) {
-            lblGameMessage.setText("Time's up! No one answered.");
-            Timer t = new Timer(2000, e -> out.println("NEXT_ROUND"));
-            t.setRepeats(false);
-            t.start();
+            lblGameMessage.setText("Time's up! No one answered. Moving to next round...");
         }
         else if (m.startsWith("WAITING_MSG:")) {
             String msg = m.substring(11);
@@ -647,9 +640,33 @@ public class ClientGUI extends JFrame {
             String pname = m.substring(14);
             lblConnStatus.setText(pname + " joined the studio");
         }
+        else if (m.startsWith("REMOVE_PLAYER:")) {
+            String pname = m.substring(14);
+            connectionListModel.removeElement(pname);
+            playRoomListModel.removeElement(pname);
+            connectionList.repaint();
+            playRoomList.repaint();
+            System.out.println("FORCE REMOVED: " + pname);
+        }
         else if (m.startsWith("PLAYER_LEFT:")) {
             String pname = m.substring(12);
-            lblConnStatus.setText(pname + " left");
+            
+            connectionListModel.removeElement(pname);
+            playRoomListModel.removeElement(pname);
+            
+            connectionList.repaint();
+            playRoomList.repaint();
+            
+            if (pname.equals(myName)) {
+                btnJoinPlayRoom.setEnabled(false);
+                btnReady.setEnabled(false);
+                cardLayout.show(mainPanel, "CONNECTION");
+                lblConnStatus.setText("You left the studio");
+            } else {
+                lblConnStatus.setText(pname + " left the studio");
+            }
+            
+            System.out.println("PLAYER LEFT: " + pname);
         }
         else if (m.equals("GAME_LEFT")) {
             resetGame();
@@ -658,6 +675,28 @@ public class ClientGUI extends JFrame {
         }
         else if (m.startsWith("ERROR:")) {
             JOptionPane.showMessageDialog(this, m.substring(6), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+        else if (m.equals("FINAL")) {
+            resetGame();
+            cardLayout.show(mainPanel, "CONNECTION");
+            out.println("RETURN_TO_CONNECTION");
+        }
+        else if (m.startsWith("WINNER_ANNOUNCEMENT:")) {
+            String data = m.substring(20);
+            if (data.startsWith("NONE")) {
+                JOptionPane.showMessageDialog(this, "Game Over!\nNo winner! All players had 0 points.", "Game Ended", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                String[] parts = data.split(":");
+                String winner = parts[0];
+                String score = parts[1];
+                JOptionPane.showMessageDialog(this, "Game Over!\nWinner: " + winner + "\nScore: " + score + " points", "Game Ended", JOptionPane.INFORMATION_MESSAGE);
+            }
+            resetGame();
+            cardLayout.show(mainPanel, "CONNECTION");
+        }
+        else if (m.equals("NOT_READY_GAME_OVER")) {
+            JOptionPane.showMessageDialog(this, "You were not ready when the game started.\nYou will return to Connection Room.", "Not Ready", JOptionPane.WARNING_MESSAGE);
+            cardLayout.show(mainPanel, "CONNECTION");
         }
     }
 
