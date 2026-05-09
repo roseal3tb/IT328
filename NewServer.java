@@ -18,6 +18,9 @@ public class NewServer {
     private static boolean countdownRunning = false;
     private static int countdownSeconds = 10;
     
+    // Timer for auto-start after 30 seconds
+    private static Timer autoStartTimer = null;
+    
     private static final List<Integer> availableLevels = new ArrayList<>();
     private static final Random random = new Random();
 
@@ -66,6 +69,31 @@ public class NewServer {
             if (h != null) h.send("PLAYROOM_JOINED");
             System.out.println(name + " joined Play Room (" + playRoomPlayers.size() + "/" + MAX_PLAYROOM + ")");
         }
+        
+        // Cancel any existing auto-start timer
+        if (autoStartTimer != null) {
+            autoStartTimer.cancel();
+            autoStartTimer = null;
+        }
+        
+        // Start 30-second timer if we have at least 2 players and game not started
+        if (!gameInProgress && playRoomPlayers.size() >= 2) {
+            autoStartTimer = new Timer();
+            autoStartTimer.schedule(new TimerTask() {
+                public void run() {
+                    synchronized (NewServer.class) {
+                        // Only start if game still not in progress and we have 2+ players
+                        if (!gameInProgress && playRoomPlayers.size() >= 2) {
+                            System.out.println("30 seconds passed! Starting game automatically...");
+                            broadcast("WAITING_MSG:30 seconds passed! Starting game now...");
+                            startGame();
+                        }
+                        autoStartTimer = null;
+                    }
+                }
+            }, 30000);
+            broadcast("WAITING_MSG:Game will start automatically in 30 seconds. Press READY to start sooner.");
+        }
     }
 
     public static synchronized void leavePlayRoom(String name) {
@@ -78,6 +106,13 @@ public class NewServer {
         broadcast("PLAYER_LEFT:" + name);
         System.out.println(name + " left Play Room");
         
+        // Cancel auto-start if less than 2 players remain
+        if (playRoomPlayers.size() < 2 && autoStartTimer != null) {
+            autoStartTimer.cancel();
+            autoStartTimer = null;
+            broadcast("WAITING_MSG:Need at least 2 players to start game.");
+        }
+        
         if (playRoomPlayers.size() < 2 && playRoomTimer != null) {
             playRoomTimer.cancel();
             playRoomTimer = null;
@@ -85,6 +120,11 @@ public class NewServer {
             broadcast("WAITING_MSG:Need at least 2 players to start.");
         }
         if (playRoomPlayers.size() >= 2 && readyPlayers.size() == playRoomPlayers.size() && !countdownRunning && playRoomTimer == null) {
+            // Cancel auto-start if all ready
+            if (autoStartTimer != null) {
+                autoStartTimer.cancel();
+                autoStartTimer = null;
+            }
             startPlayRoomCountdown();
         }
     }
@@ -97,7 +137,13 @@ public class NewServer {
             broadcastPlayRoomList();
             broadcast("WAITING_MSG:" + name + " is ready (" + readyPlayers.size() + "/" + playRoomPlayers.size() + ")");
             
+            // If all players are ready, cancel auto-start and start countdown
             if (readyPlayers.size() == playRoomPlayers.size() && playRoomPlayers.size() >= 2 && !countdownRunning && playRoomTimer == null) {
+                if (autoStartTimer != null) {
+                    autoStartTimer.cancel();
+                    autoStartTimer = null;
+                    broadcast("WAITING_MSG:All players ready! Starting game...");
+                }
                 startPlayRoomCountdown();
             }
         }
@@ -126,6 +172,25 @@ public class NewServer {
     public static synchronized void startGame() {
         if (gameInProgress) return;
         if (playRoomPlayers.size() < 2) return;
+        
+        // Cancel auto-start if it's running
+        if (autoStartTimer != null) {
+            autoStartTimer.cancel();
+            autoStartTimer = null;
+        }
+        
+        // Cancel countdown timer if it's running
+        if (playRoomTimer != null) {
+            playRoomTimer.cancel();
+            playRoomTimer = null;
+        }
+        countdownRunning = false;
+        
+        // If no one is ready, mark all as ready
+        if (readyPlayers.isEmpty()) {
+            readyPlayers.addAll(playRoomPlayers);
+            broadcast("WAITING_MSG:Auto-starting game with all players!");
+        }
         
         inGamePlayers.clear();
         inGamePlayers.addAll(readyPlayers);
@@ -251,6 +316,11 @@ public class NewServer {
     }
 
     private static void resetForNewGame() {
+        if (autoStartTimer != null) {
+            autoStartTimer.cancel();
+            autoStartTimer = null;
+        }
+        
         if (gameTimer != null) gameTimer.cancel();
         if (playRoomTimer != null) playRoomTimer.cancel();
         countdownRunning = false;
@@ -274,6 +344,12 @@ public class NewServer {
         readyPlayers.remove(name);
         inGamePlayers.remove(name);
         playerScores.remove(name);
+        
+        // Cancel auto-start if less than 2 players remain
+        if (!gameInProgress && playRoomPlayers.size() < 2 && autoStartTimer != null) {
+            autoStartTimer.cancel();
+            autoStartTimer = null;
+        }
         
         // إرسال أمر الإزالة المباشر
         broadcast("REMOVE_PLAYER:" + name);
